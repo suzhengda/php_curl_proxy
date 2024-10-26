@@ -64,7 +64,7 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, array_map(function($key) use ($clientHeader
 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, true);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 curl_setopt($ch, CURLOPT_USE_SSL, true);
-// curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1); // cURL Error: HTTP/2 stream 0 was not closed cleanly: PROTOCOL_ERROR (err 1) 
 
 curl_setopt($ch, CURLOPT_FORBID_REUSE, true);
 curl_setopt($ch, CURLOPT_FRESH_CONNECT, true);
