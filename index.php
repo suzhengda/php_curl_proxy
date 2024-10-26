@@ -10,9 +10,9 @@ set_time_limit(0);
 
 // 打开日志文件
 $logFile = fopen("curl_log.txt", "a");
-$canWrite = false;
+$canWrite = true;
 
-//if( strpos($_SERVER['REQUEST_URI'], "CompressUploadImage") !== false ) {
+//if( strpos($_SERVER['REQUEST_URI'], "CompressUploadImage") !== false ) { // artifacts
 	// 尝试锁定文件
 	if( flock($logFile, LOCK_EX ) ) { // 独占锁定
 		// 在这里进行文件读写操作
@@ -82,7 +82,7 @@ curl_setopt($ch, CURLOPT_CAINFO, $certPath );
 
 
 // Pass-through POST requests, too
-if (strtoupper($_SERVER['REQUEST_METHOD']) == 'POST' && count($_FILES) > 0 ) {
+if (strtoupper($_SERVER['REQUEST_METHOD']) == 'POST' && (count($_FILES) > 0 || preg_match("/^multipart/", strtolower($_SERVER['CONTENT_TYPE'])) ) ) {
 	
 /*
 	// Set up the POST request
@@ -142,7 +142,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD']) == 'POST' && count($_FILES) > 0 ) {
 	
 	// $post_data = file_get_contents("php://input");
 
-    if (preg_match("/^multipart/", strtolower($_SERVER['CONTENT_TYPE']))) {
+    if ( preg_match("/^multipart/", strtolower($_SERVER['CONTENT_TYPE'])) ) {
         // $delimiter = '-------------' . uniqid();
         // $post_data = build_multipart_data_files($delimiter, $_POST, $_FILES);
 		// curl_setopt( $curl, CURLOPT_POSTFIELDS, $post_data );
@@ -157,36 +157,57 @@ if (strtoupper($_SERVER['REQUEST_METHOD']) == 'POST' && count($_FILES) > 0 ) {
 		
 		// CURLFile: {"file":{"name":"\u65e0\u6807\u9898.png","type":"application\/octet-stream","tmp_name":"C:\\Users\\admin\\AppData\\Local\\Temp\\phpA1DE.tmp","error":0,"size":3833}}
 		// Create a CURLFile object
-		$cfile = new CURLFile( $_FILES["file"]["tmp_name"], $_FILES["file"]["type"],  $_FILES["file"]["name"]); //
-
-		// var_dump( $cfile  );
-		// Assign POST data
-		$data = array('file' => $cfile);
-		// NOTE: CURLOPT_POSTFIELDS 类型会自动构建multipart/form-data类型的分隔符，body的Content-Length长度计算,以及赋值。 
-		// CURLOPT_POSTFIELDS 包含 $_POST, $_FILES两者信息，是否解析到post取决于len、type等
-		// 简单通过CURLOPT_POSTFIELDS去转发file_get_contents('php://input')以及附带原样请求头（Content-Type、Content-Length）会出现"OpenSSL SSL_read: SSL_ERROR_SYSCALL, errno 10054 "的错误，且会卡住60s左右
-		curl_setopt($ch, CURLOPT_POSTFIELDS, $data);  
 		
-		if( $canWrite ) {
-			fwrite($logFile, "\n get php://input " . file_get_contents("php://input") . " \n");
-			fwrite($logFile, "\n get _FILES " . json_encode($_FILES) . " \n");
-			fwrite($logFile, "\n send body " . json_encode($post_data) . " \n");
-			fwrite($logFile, "\n send header " . json_encode(array_map(function($key) use ($clientHeaders) {
-				return "$key: " . $clientHeaders[$key];
-			}, array_keys($clientHeaders))) . " \n");
+		
+		if( count($_FILES) ) {
+			$cfile = new CURLFile( $_FILES["file"]["tmp_name"], $_FILES["file"]["type"],  $_FILES["file"]["name"]); //
+
+			// var_dump( $cfile  );
+			// Assign POST data
+			$data = array('file' => $cfile);
+			// NOTE: CURLOPT_POSTFIELDS 类型会自动构建multipart/form-data类型的分隔符，body的Content-Length长度计算,以及赋值。 
+			// CURLOPT_POSTFIELDS 包含 $_POST, $_FILES两者信息，是否解析到post取决于len、type等
+			// 简单通过CURLOPT_POSTFIELDS去转发file_get_contents('php://input')以及附带原样请求头（Content-Type、Content-Length）会出现"OpenSSL SSL_read: SSL_ERROR_SYSCALL, errno 10054 "的错误，且会卡住60s左右
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $data); 
+		} else {
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $_POST);  
 		}
     }
 	
+
+	
 	// exit(0);
+} else if( strtoupper($_SERVER['REQUEST_METHOD']) == 'POST' ) {
+	unset($clientHeaders["Content-Length"]);
+	curl_setopt($ch, CURLOPT_HTTPHEADER, array_map(function($key) use ($clientHeaders) {
+		return "$key: " . $clientHeaders[$key];
+	}, array_keys($clientHeaders)));
+	
+	curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
 } else {
 	curl_setopt($ch, CURLOPT_POSTFIELDS, $body); // 转发请求体（如果有）
+}
+
+if( $canWrite ) {
+	fwrite($logFile, "\n $method $targetUrl php://input " . file_get_contents("php://input") . " \n");
+	fwrite($logFile, "\n $method $targetUrl _FILES " . json_encode($_FILES) . " \n");
+	fwrite($logFile, "\n $method $targetUrl send post " . json_encode($_POST) . " \n");
+	
+	 
+	
+	fwrite($logFile, "\n $method $targetUrl HTTP_RAW_POST_DATA " . GLOBALS['HTTP_RAW_POST_DATA'] . " \n");
+	
+	fwrite($logFile, "\n $method $targetUrl origin header " . json_encode(getallheaders()) . " \n");
+	fwrite($logFile, "\n $method $targetUrl send header " . json_encode(array_map(function($key) use ($clientHeaders) {
+		return "$key: " . $clientHeaders[$key];
+	}, array_keys($clientHeaders))) . " \n");
 }
 
 // 启用响应头的输出
 curl_setopt($ch, CURLOPT_HEADER, true);
 
-if( $canWrite )
-fwrite($logFile, "\n $method $targetUrl Write req body!!\n". '' . "\n");
+/* if( $canWrite )
+fwrite($logFile, "\n $method $targetUrl Write req body!!\n". '' . "\n"); */
 
 // 执行请求
 $response = curl_exec($ch);
